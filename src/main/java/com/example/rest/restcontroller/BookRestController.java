@@ -14,7 +14,9 @@ import jakarta.validation.Valid;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -22,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -211,5 +214,64 @@ public class BookRestController {
         List<HashMap<String, List<String>>> response = new ArrayList<>();
         response.add(result);
         return ResponseEntity.ok(response);
+    }
+
+    //이미지 뷰어
+    @GetMapping("/{image_id}/imageSrc")
+    public ResponseEntity<byte[]> getImage(@PathVariable("image_id") Long image_id) throws IOException {
+        Optional<BookImage> optionalBook= bookImageService.findById(image_id);
+        byte[] imageBytes;
+        if(optionalBook.isPresent()){
+            BookImage bookImage = optionalBook.get();
+            Path imagePath = ImageUtil.getFileAsResource(uploadPath, bookImage.getBook().getId(), bookImage.getFileName());
+            imageBytes = Files.readAllBytes(imagePath);
+
+            // Determine the content type based on the file extension
+            String fileName = bookImage.getFileName();
+            String fileExtension = "";
+            int lastDotIndex = fileName.lastIndexOf('.');
+            if (lastDotIndex > 0 && lastDotIndex < fileName.length() - 1) {
+                fileExtension = fileName.substring(lastDotIndex + 1).toLowerCase();
+            }
+            MediaType mediaType;
+            switch (fileExtension) {
+                case "png":
+                    mediaType = MediaType.IMAGE_PNG;
+                    break;
+                case "jpg":
+                case "jpeg":
+                    mediaType = MediaType.IMAGE_JPEG;
+                    break;
+                case "gif":
+                    mediaType = MediaType.IMAGE_GIF;
+                    break;
+                default:
+                    mediaType = MediaType.APPLICATION_OCTET_STREAM;
+                    break;
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(mediaType); // Set appropriate content type based on image format->수정
+            return new ResponseEntity<>(imageBytes, headers, HttpStatus.OK);
+        }else{
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        }
+    }
+
+    @DeleteMapping(value = "/{image_id}/delete")
+    public ResponseEntity<String> delete_photo(@PathVariable Long image_id) {
+        try {
+            Optional<BookImage> optionalBookImage = bookImageService.findById(image_id);
+            if(optionalBookImage.isPresent()){
+                BookImage bookImage = optionalBookImage.get();
+                ImageUtil.deleteImage(uploadPath, bookImage.getBook().getId(), bookImage.getFileName());
+                bookImageService.delete(bookImage);
+                return ResponseEntity.status(HttpStatus.ACCEPTED).body(null);
+            }else{
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        }
     }
 }
